@@ -5,59 +5,28 @@
 <title>GitHub Drive</title>
 
 <style>
-body {
-  background: #0d1117;
-  color: #c9d1d9;
-  font-family: -apple-system, BlinkMacSystemFont;
-}
+body { background:#0d1117; color:#c9d1d9; font-family:sans-serif; }
+.container { max-width:900px; margin:auto; padding:20px; }
+.card { background:#161b22; border:1px solid #30363d; padding:20px; border-radius:10px; }
 
-.container {
-  max-width: 900px;
-  margin: auto;
-  padding: 20px;
-}
-
-.card {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 10px;
-  padding: 20px;
-}
-
-.drop {
-  border: 2px dashed #30363d;
-  padding: 30px;
-  text-align: center;
-  cursor: pointer;
-}
-
-.file {
-  border: 1px solid #30363d;
-  padding: 10px;
-  margin-top: 10px;
-  border-radius: 6px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+input {
+  width:100%; padding:10px; margin:5px 0;
+  background:#0d1117; border:1px solid #30363d; color:white;
 }
 
 button {
-  background: #238636;
-  color: white;
-  border: none;
-  padding: 8px 12px;
-  border-radius: 6px;
-  margin-left: 5px;
+  background:#238636; color:white; border:none;
+  padding:8px; margin:5px; border-radius:6px;
 }
 
-input {
-  width: 100%;
-  padding: 10px;
-  margin-bottom: 10px;
-  background: #0d1117;
-  border: 1px solid #30363d;
-  color: white;
-  border-radius: 6px;
+.file {
+  border:1px solid #30363d; padding:10px;
+  margin-top:10px; border-radius:6px;
+  display:flex; justify-content:space-between;
+}
+
+.nav {
+  display:flex; gap:10px; margin-bottom:10px;
 }
 </style>
 </head>
@@ -65,165 +34,147 @@ input {
 <body>
 
 <div class="container">
-  <div class="card">
-    <h2>📦 GitHub Drive</h2>
+<div class="card">
 
-    <input id="token" placeholder="GitHub Token">
-    <input id="repo" placeholder="username/repo">
+<h2>📦 GitHub Drive</h2>
 
-    <div class="drop" id="drop">Drag files or click</div>
-    <input type="file" id="file" multiple hidden>
+<input id="token" placeholder="GitHub Token">
+<input id="repo" placeholder="username/repo">
+<input id="path" placeholder="folder (uploads)">
 
-    <button onclick="uploadAll()">Upload</button>
-    <button onclick="loadFiles()">Refresh Files</button>
+<div class="nav">
+  <button onclick="showPage('home')">🏠 Home</button>
+  <button onclick="showPage('uploads')">📁 Uploads</button>
+</div>
 
-    <div id="uploadList"></div>
+<!-- HOME -->
+<div id="homePage">
+  <h3>🆕 Recent Uploads</h3>
+  <div id="recent"></div>
+</div>
 
-    <h3>📁 Files</h3>
-    <div id="files"></div>
-  </div>
+<!-- UPLOADS -->
+<div id="uploadsPage" style="display:none;">
+  <input id="search" placeholder="Search..." oninput="loadAllFiles()">
+
+  <input type="file" id="file" multiple>
+  <button onclick="uploadAll()">Upload</button>
+
+  <div id="allFiles"></div>
+</div>
+
+</div>
 </div>
 
 <script>
-let filesToUpload = [];
+function token(){ return document.getElementById("token").value }
+function repo(){ return document.getElementById("repo").value }
+function path(){ return document.getElementById("path").value || "uploads" }
 
-const drop = document.getElementById("drop");
-const input = document.getElementById("file");
+function showPage(p){
+  document.getElementById("homePage").style.display = (p==="home")?"block":"none";
+  document.getElementById("uploadsPage").style.display = (p==="uploads")?"block":"none";
 
-drop.onclick = () => input.click();
-
-input.onchange = e => addFiles(e.target.files);
-
-drop.ondragover = e => e.preventDefault();
-
-drop.ondrop = e => {
-  e.preventDefault();
-  addFiles(e.dataTransfer.files);
-};
-
-function addFiles(f) {
-  for (let file of f) filesToUpload.push(file);
-  renderUpload();
+  if(p==="home") loadRecent();
+  if(p==="uploads") loadAllFiles();
 }
 
-function renderUpload() {
-  let box = document.getElementById("uploadList");
-  box.innerHTML = "";
+async function loadRecent(){
+  let res = await fetch(`https://api.github.com/repos/${repo()}/contents/${path()}`);
+  let data = await res.json();
 
-  filesToUpload.forEach((f, i) => {
-    box.innerHTML += `
-      <div class="file">
-        ${f.name}
-        <progress id="p${i}" value="0" max="100"></progress>
-      </div>`;
+  let box = document.getElementById("recent");
+  box.innerHTML="";
+
+  // last 10 uploads
+  data.reverse().slice(0,10).forEach(f=>{
+    box.innerHTML += fileHTML(f);
   });
 }
 
-async function uploadAll() {
-  const token = tokenVal();
-  const repo = repoVal();
+async function loadAllFiles(){
+  let res = await fetch(`https://api.github.com/repos/${repo()}/contents/${path()}`);
+  let data = await res.json();
 
-  for (let i = 0; i < filesToUpload.length; i++) {
-    await uploadFile(filesToUpload[i], i, token, repo);
-  }
+  let search = document.getElementById("search").value.toLowerCase();
 
-  loadFiles();
+  let box = document.getElementById("allFiles");
+  box.innerHTML="";
+
+  data.forEach(f=>{
+    if(!f.name.toLowerCase().includes(search)) return;
+    box.innerHTML += fileHTML(f);
+  });
 }
 
-function uploadFile(file, i, token, repo) {
-  return new Promise(resolve => {
-    const reader = new FileReader();
+function fileHTML(f){
+  return `
+  <div class="file">
+    <div>${f.name}</div>
+    <div>
+      <button onclick="copy('${f.download_url}')">Copy</button>
+      <button onclick="del('${f.path}','${f.sha}')">Delete</button>
+    </div>
+  </div>`;
+}
 
-    reader.onload = async () => {
+async function uploadAll(){
+  let files = document.getElementById("file").files;
+
+  for(let i=0;i<files.length;i++){
+    await upload(files[i]);
+  }
+
+  loadAllFiles();
+  loadRecent();
+}
+
+function upload(file){
+  return new Promise(resolve=>{
+    let reader = new FileReader();
+
+    reader.onload=()=>{
       let base64 = reader.result.split(',')[1];
-      let name = Date.now() + "_" + file.name;
+      let name = Date.now()+"_"+file.name;
 
-      let xhr = new XMLHttpRequest();
-      xhr.open("PUT", `https://api.github.com/repos/${repo}/contents/uploads/${name}`);
-      xhr.setRequestHeader("Authorization", "token " + token);
-      xhr.setRequestHeader("Content-Type", "application/json");
-
-      xhr.upload.onprogress = e => {
-        document.getElementById("p"+i).value = (e.loaded/e.total)*100;
-      };
-
-      xhr.onload = () => resolve();
-
-      xhr.send(JSON.stringify({
-        message: "upload",
-        content: base64
-      }));
+      fetch(`https://api.github.com/repos/${repo()}/contents/${path()}/${name}`,{
+        method:"PUT",
+        headers:{
+          "Authorization":"token "+token(),
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+          message:"upload",
+          content:base64
+        })
+      }).then(()=>resolve());
     };
 
     reader.readAsDataURL(file);
   });
 }
 
-async function loadFiles() {
-  const repo = repoVal();
-
-  let res = await fetch(`https://api.github.com/repos/${repo}/contents/uploads`);
-  let data = await res.json();
-
-  let box = document.getElementById("files");
-  box.innerHTML = "";
-
-  data.forEach(f => {
-    let preview = "";
-
-    if (f.name.match(/\.(jpg|png|jpeg|gif)$/)) {
-      preview = `<img src="${f.download_url}" width="80">`;
-    }
-
-    if (f.name.match(/\.(mp4|webm)$/)) {
-      preview = `<video src="${f.download_url}" width="120" controls></video>`;
-    }
-
-    box.innerHTML += `
-      <div class="file">
-        <div>
-          ${preview}
-          ${f.name}
-        </div>
-        <div>
-          <button onclick="copy('${f.download_url}')">Copy</button>
-          <button onclick="deleteFile('${f.path}', '${f.sha}')">Delete</button>
-        </div>
-      </div>`;
-  });
-}
-
-async function deleteFile(path, sha) {
-  const token = tokenVal();
-  const repo = repoVal();
-
-  await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
-    method: "DELETE",
-    headers: {
-      "Authorization": "token " + token,
-      "Content-Type": "application/json"
+async function del(pathFile,sha){
+  await fetch(`https://api.github.com/repos/${repo()}/contents/${pathFile}`,{
+    method:"DELETE",
+    headers:{
+      "Authorization":"token "+token(),
+      "Content-Type":"application/json"
     },
-    body: JSON.stringify({
-      message: "delete",
-      sha: sha
-    })
+    body:JSON.stringify({message:"delete",sha:sha})
   });
 
-  loadFiles();
+  loadAllFiles();
+  loadRecent();
 }
 
-function copy(text) {
-  navigator.clipboard.writeText(text);
+function copy(t){
+  navigator.clipboard.writeText(t);
   alert("Copied!");
 }
 
-function tokenVal() {
-  return document.getElementById("token").value;
-}
-
-function repoVal() {
-  return document.getElementById("repo").value;
-}
+// auto load home
+showPage("home");
 </script>
 
 </body>

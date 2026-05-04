@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GitHub Drive</title>
+<title>GitHub Drive PRO+</title>
 
 <style>
 body { background:#0d1117; color:#c9d1d9; font-family:sans-serif; }
@@ -25,8 +25,17 @@ button {
   display:flex; justify-content:space-between;
 }
 
-.nav {
-  display:flex; gap:10px; margin-bottom:10px;
+.nav { display:flex; gap:10px; margin-bottom:10px; }
+
+progress {
+  width:100%;
+  height:10px;
+  border-radius:10px;
+}
+
+progress::-webkit-progress-bar { background:#30363d; }
+progress::-webkit-progress-value {
+  background:linear-gradient(90deg,#238636,#2ea043);
 }
 </style>
 </head>
@@ -36,11 +45,11 @@ button {
 <div class="container">
 <div class="card">
 
-<h2>📦 GitHub Drive</h2>
+<h2>📦 GitHub Drive PRO+</h2>
 
 <input id="token" placeholder="GitHub Token">
 <input id="repo" placeholder="username/repo">
-<input id="path" placeholder="folder (uploads)">
+<input id="path" placeholder="folder (default uploads)">
 
 <div class="nav">
   <button onclick="showPage('home')">🏠 Home</button>
@@ -79,6 +88,7 @@ function showPage(p){
   if(p==="uploads") loadAllFiles();
 }
 
+// 📦 LOAD RECENT
 async function loadRecent(){
   let res = await fetch(`https://api.github.com/repos/${repo()}/contents/${path()}`);
   let data = await res.json();
@@ -86,19 +96,19 @@ async function loadRecent(){
   let box = document.getElementById("recent");
   box.innerHTML="";
 
-  // last 10 uploads
   data.reverse().slice(0,10).forEach(f=>{
     box.innerHTML += fileHTML(f);
   });
 }
 
+// 📁 LOAD ALL FILES + SEARCH
 async function loadAllFiles(){
   let res = await fetch(`https://api.github.com/repos/${repo()}/contents/${path()}`);
   let data = await res.json();
 
   let search = document.getElementById("search").value.toLowerCase();
-
   let box = document.getElementById("allFiles");
+
   box.innerHTML="";
 
   data.forEach(f=>{
@@ -107,10 +117,17 @@ async function loadAllFiles(){
   });
 }
 
+// 🕒 FILE UI + DATE
 function fileHTML(f){
+  let timestamp = f.name.split("_")[0];
+  let date = isNaN(timestamp) ? "" : new Date(parseInt(timestamp)).toLocaleString();
+
   return `
   <div class="file">
-    <div>${f.name}</div>
+    <div>
+      ${f.name}<br>
+      <small>${date}</small>
+    </div>
     <div>
       <button onclick="copy('${f.download_url}')">Copy</button>
       <button onclick="del('${f.path}','${f.sha}')">Delete</button>
@@ -118,43 +135,98 @@ function fileHTML(f){
   </div>`;
 }
 
+// 🚀 UPLOAD ALL WITH PROGRESS
 async function uploadAll(){
   let files = document.getElementById("file").files;
+  let box = document.getElementById("allFiles");
+
+  if(files.length === 0){
+    alert("Walang file!");
+    return;
+  }
+
+  box.innerHTML="";
 
   for(let i=0;i<files.length;i++){
-    await upload(files[i]);
+    box.innerHTML += `
+      <div class="file">
+        <div>
+          ${files[i].name}<br>
+          <small>${(files[i].size/1024).toFixed(1)} KB</small>
+        </div>
+        <div style="width:50%">
+          <progress id="prog${i}" value="0" max="100"></progress><br>
+          <span id="status${i}">Waiting...</span>
+        </div>
+      </div>
+    `;
+
+    await upload(files[i], i);
   }
 
   loadAllFiles();
   loadRecent();
 }
 
-function upload(file){
+// ⚡ UPLOAD FUNCTION WITH SPEED + ETA
+function upload(file, index){
   return new Promise(resolve=>{
     let reader = new FileReader();
 
-    reader.onload=()=>{
+    reader.onload = () => {
       let base64 = reader.result.split(',')[1];
       let name = Date.now()+"_"+file.name;
 
-      fetch(`https://api.github.com/repos/${repo()}/contents/${path()}/${name}`,{
-        method:"PUT",
-        headers:{
-          "Authorization":"token "+token(),
-          "Content-Type":"application/json"
-        },
-        body:JSON.stringify({
-          message:"upload",
-          content:base64
-        })
-      }).then(()=>resolve());
+      let xhr = new XMLHttpRequest();
+      xhr.open("PUT", `https://api.github.com/repos/${repo()}/contents/${path()}/${name}`);
+      xhr.setRequestHeader("Authorization", "token " + token());
+      xhr.setRequestHeader("Content-Type", "application/json");
+
+      let startTime = Date.now();
+
+      xhr.upload.onprogress = (e) => {
+        if(e.lengthComputable){
+          let percent = (e.loaded / e.total) * 100;
+          document.getElementById("prog"+index).value = percent;
+
+          let time = (Date.now()-startTime)/1000;
+          let speed = e.loaded/time;
+
+          let speedText = speed > 1024*1024
+            ? (speed/1024/1024).toFixed(2)+" MB/s"
+            : (speed/1024).toFixed(1)+" KB/s";
+
+          let remaining = (e.total-e.loaded)/speed;
+          let eta = remaining>0 ? remaining.toFixed(1)+"s" : "0s";
+
+          document.getElementById("status"+index).innerText =
+            Math.round(percent)+"% • "+speedText+" • ETA "+eta;
+        }
+      };
+
+      xhr.onload = () => {
+        document.getElementById("status"+index).innerText =
+          xhr.status===201 ? "✅ Uploaded" : "❌ Error";
+        resolve();
+      };
+
+      xhr.onerror = () => {
+        document.getElementById("status"+index).innerText = "❌ Failed";
+        resolve();
+      };
+
+      xhr.send(JSON.stringify({
+        message:"upload",
+        content:base64
+      }));
     };
 
     reader.readAsDataURL(file);
   });
 }
 
-async function del(pathFile,sha){
+// 🗑 DELETE
+async function del(pathFile, sha){
   await fetch(`https://api.github.com/repos/${repo()}/contents/${pathFile}`,{
     method:"DELETE",
     headers:{
@@ -168,12 +240,13 @@ async function del(pathFile,sha){
   loadRecent();
 }
 
+// 🔗 COPY
 function copy(t){
   navigator.clipboard.writeText(t);
   alert("Copied!");
 }
 
-// auto load home
+// default load
 showPage("home");
 </script>
 

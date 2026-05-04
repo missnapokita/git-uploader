@@ -88,7 +88,18 @@ function showPage(p){
   if(p==="uploads") loadAllFiles();
 }
 
-// 📦 LOAD RECENT
+// ⏱ RELATIVE TIME
+function timeAgo(timestamp){
+  let now = Date.now();
+  let diff = Math.floor((now - timestamp) / 1000);
+
+  if(diff < 60) return diff + " sec ago";
+  if(diff < 3600) return Math.floor(diff/60) + " min ago";
+  if(diff < 86400) return Math.floor(diff/3600) + " hr ago";
+  return Math.floor(diff/86400) + " day ago";
+}
+
+// 🆕 LOAD RECENT (NEWEST FIRST)
 async function loadRecent(){
   let res = await fetch(`https://api.github.com/repos/${repo()}/contents/${path()}`);
   let data = await res.json();
@@ -96,12 +107,18 @@ async function loadRecent(){
   let box = document.getElementById("recent");
   box.innerHTML="";
 
-  data.reverse().slice(0,10).forEach(f=>{
+  data.sort((a,b)=>{
+    let ta = parseInt(a.name.split("_")[0]) || 0;
+    let tb = parseInt(b.name.split("_")[0]) || 0;
+    return tb - ta;
+  });
+
+  data.slice(0,10).forEach(f=>{
     box.innerHTML += fileHTML(f);
   });
 }
 
-// 📁 LOAD ALL FILES + SEARCH
+// 📁 LOAD ALL FILES
 async function loadAllFiles(){
   let res = await fetch(`https://api.github.com/repos/${repo()}/contents/${path()}`);
   let data = await res.json();
@@ -117,16 +134,16 @@ async function loadAllFiles(){
   });
 }
 
-// 🕒 FILE UI + DATE
+// 🧠 FILE UI + RELATIVE TIME
 function fileHTML(f){
-  let timestamp = f.name.split("_")[0];
-  let date = isNaN(timestamp) ? "" : new Date(parseInt(timestamp)).toLocaleString();
+  let timestamp = parseInt(f.name.split("_")[0]);
+  let timeText = !isNaN(timestamp) ? timeAgo(timestamp) : "old file";
 
   return `
   <div class="file">
     <div>
       ${f.name}<br>
-      <small>${date}</small>
+      <small>${timeText}</small>
     </div>
     <div>
       <button onclick="copy('${f.download_url}')">Copy</button>
@@ -135,7 +152,7 @@ function fileHTML(f){
   </div>`;
 }
 
-// 🚀 UPLOAD ALL WITH PROGRESS
+// 🚀 UPLOAD ALL
 async function uploadAll(){
   let files = document.getElementById("file").files;
   let box = document.getElementById("allFiles");
@@ -168,7 +185,7 @@ async function uploadAll(){
   loadRecent();
 }
 
-// ⚡ UPLOAD FUNCTION WITH SPEED + ETA
+// ⚡ UPLOAD WITH SPEED + ETA
 function upload(file, index){
   return new Promise(resolve=>{
     let reader = new FileReader();
@@ -246,7 +263,6 @@ function copy(t){
   alert("Copied!");
 }
 
-// default load
 showPage("home");
 </script>
 

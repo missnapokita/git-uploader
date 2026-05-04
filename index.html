@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Drive</title>
+
+<style>
+body {
+  background: #0d1117;
+  color: #c9d1d9;
+  font-family: -apple-system, BlinkMacSystemFont;
+}
+
+.container {
+  max-width: 900px;
+  margin: auto;
+  padding: 20px;
+}
+
+.card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.drop {
+  border: 2px dashed #30363d;
+  padding: 30px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.file {
+  border: 1px solid #30363d;
+  padding: 10px;
+  margin-top: 10px;
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+button {
+  background: #238636;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-left: 5px;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  color: white;
+  border-radius: 6px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+  <div class="card">
+    <h2>📦 GitHub Drive</h2>
+
+    <input id="token" placeholder="GitHub Token">
+    <input id="repo" placeholder="username/repo">
+
+    <div class="drop" id="drop">Drag files or click</div>
+    <input type="file" id="file" multiple hidden>
+
+    <button onclick="uploadAll()">Upload</button>
+    <button onclick="loadFiles()">Refresh Files</button>
+
+    <div id="uploadList"></div>
+
+    <h3>📁 Files</h3>
+    <div id="files"></div>
+  </div>
+</div>
+
+<script>
+let filesToUpload = [];
+
+const drop = document.getElementById("drop");
+const input = document.getElementById("file");
+
+drop.onclick = () => input.click();
+
+input.onchange = e => addFiles(e.target.files);
+
+drop.ondragover = e => e.preventDefault();
+
+drop.ondrop = e => {
+  e.preventDefault();
+  addFiles(e.dataTransfer.files);
+};
+
+function addFiles(f) {
+  for (let file of f) filesToUpload.push(file);
+  renderUpload();
+}
+
+function renderUpload() {
+  let box = document.getElementById("uploadList");
+  box.innerHTML = "";
+
+  filesToUpload.forEach((f, i) => {
+    box.innerHTML += `
+      <div class="file">
+        ${f.name}
+        <progress id="p${i}" value="0" max="100"></progress>
+      </div>`;
+  });
+}
+
+async function uploadAll() {
+  const token = tokenVal();
+  const repo = repoVal();
+
+  for (let i = 0; i < filesToUpload.length; i++) {
+    await uploadFile(filesToUpload[i], i, token, repo);
+  }
+
+  loadFiles();
+}
+
+function uploadFile(file, i, token, repo) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+
+    reader.onload = async () => {
+      let base64 = reader.result.split(',')[1];
+      let name = Date.now() + "_" + file.name;
+
+      let xhr = new XMLHttpRequest();
+      xhr.open("PUT", `https://api.github.com/repos/${repo}/contents/uploads/${name}`);
+      xhr.setRequestHeader("Authorization", "token " + token);
+      xhr.setRequestHeader("Content-Type", "application/json");
+
+      xhr.upload.onprogress = e => {
+        document.getElementById("p"+i).value = (e.loaded/e.total)*100;
+      };
+
+      xhr.onload = () => resolve();
+
+      xhr.send(JSON.stringify({
+        message: "upload",
+        content: base64
+      }));
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
+async function loadFiles() {
+  const repo = repoVal();
+
+  let res = await fetch(`https://api.github.com/repos/${repo}/contents/uploads`);
+  let data = await res.json();
+
+  let box = document.getElementById("files");
+  box.innerHTML = "";
+
+  data.forEach(f => {
+    let preview = "";
+
+    if (f.name.match(/\.(jpg|png|jpeg|gif)$/)) {
+      preview = `<img src="${f.download_url}" width="80">`;
+    }
+
+    if (f.name.match(/\.(mp4|webm)$/)) {
+      preview = `<video src="${f.download_url}" width="120" controls></video>`;
+    }
+
+    box.innerHTML += `
+      <div class="file">
+        <div>
+          ${preview}
+          ${f.name}
+        </div>
+        <div>
+          <button onclick="copy('${f.download_url}')">Copy</button>
+          <button onclick="deleteFile('${f.path}', '${f.sha}')">Delete</button>
+        </div>
+      </div>`;
+  });
+}
+
+async function deleteFile(path, sha) {
+  const token = tokenVal();
+  const repo = repoVal();
+
+  await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": "token " + token,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      message: "delete",
+      sha: sha
+    })
+  });
+
+  loadFiles();
+}
+
+function copy(text) {
+  navigator.clipboard.writeText(text);
+  alert("Copied!");
+}
+
+function tokenVal() {
+  return document.getElementById("token").value;
+}
+
+function repoVal() {
+  return document.getElementById("repo").value;
+}
+</script>
+
+</body>
+</html>

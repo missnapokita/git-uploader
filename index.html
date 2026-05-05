@@ -7,17 +7,43 @@
 <style>
 body{background:#0d1117;color:#fff;font-family:sans-serif;margin:0}
 .container{padding:10px}
-.file{display:flex;gap:10px;padding:10px;border-bottom:1px solid #30363d}
-.thumb{width:50px;height:50px;background:#222;border-radius:8px}
-button{background:#238636;border:none;color:#fff;padding:8px;border-radius:6px}
+.file{display:flex;gap:10px;padding:10px;border-bottom:1px solid #30363d;align-items:center}
+.thumb{width:50px;height:50px;border-radius:8px;object-fit:cover;background:#222}
+button{background:#238636;border:none;color:#fff;padding:6px;border-radius:6px}
 input{width:100%;padding:10px;margin:5px 0;background:#0d1117;color:#fff;border:1px solid #30363d}
-.nav{position:fixed;bottom:0;width:100%;display:flex;background:#161b22}
-.nav button{flex:1;background:none}
+
+/* ✅ NAV FIXED CENTER */
+.nav{
+  position:fixed;
+  bottom:0;
+  left:0;
+  right:0;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:20px;
+  background:#161b22;
+  padding:10px;
+  border-top:1px solid #30363d;
+}
+
+/* ✅ BUTTON PUSH EFFECT */
+.nav button{
+  flex:none;
+  padding:10px 16px;
+  border-radius:10px;
+  transition:transform 0.12s ease, background 0.12s ease;
+}
+.nav button:active{
+  transform:scale(0.9);
+  background:#2ea043;
+}
+
 progress{width:100%;height:6px}
+.progress-box{flex:1}
+.percent{font-size:12px;color:#aaa}
 .toast{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#161b22;padding:10px;border-radius:6px;opacity:0;transition:.3s}
 .toast.show{opacity:1}
-.modal{position:fixed;inset:0;background:#000;display:none;justify-content:center;align-items:center}
-.modal img,.modal video{max-width:90%}
 </style>
 </head>
 
@@ -30,11 +56,16 @@ progress{width:100%;height:6px}
 <input id="repo" placeholder="username/repo">
 <input id="path" placeholder="uploads">
 
+<input id="search" placeholder="Search files..." oninput="load()">
+
 <div id="home"></div>
 
 <div id="upload" style="display:none">
 <input type="file" id="file" multiple>
 <button onclick="startUpload()">Upload</button>
+
+<h4>📂 Uploaded (last 1 day)</h4>
+<div id="recentUploads"></div>
 
 <progress id="totalBar" value="0" max="100"></progress>
 <div id="queue"></div>
@@ -48,7 +79,6 @@ progress{width:100%;height:6px}
 </div>
 
 <div id="toast" class="toast"></div>
-<div id="modal" class="modal" onclick="this.style.display='none'"></div>
 
 <script>
 function t(){return token.value}
@@ -56,21 +86,19 @@ function r(){return repo.value}
 function p(){return path.value||"uploads"}
 
 function toast(msg){
- let el=toastEl
- el.innerText=msg
- el.classList.add("show")
- setTimeout(()=>el.classList.remove("show"),2000)
+ toastEl.innerText=msg
+ toastEl.classList.add("show")
+ setTimeout(()=>toastEl.classList.remove("show"),2000)
 }
-
 let toastEl=document.getElementById("toast")
 
 function page(x){
  home.style.display=x==="home"?"block":"none"
  upload.style.display=x==="upload"?"block":"none"
  if(x==="home")load()
+ if(x==="upload")loadUploads()
 }
 
-/* TIME */
 function time(ts){
  let d=(Date.now()-ts)/1000
  if(d<5)return"just now"
@@ -81,53 +109,65 @@ function time(ts){
  return~~(d/604800)+"w"
 }
 
-/* PREVIEW */
-function view(url){
- if(url.match(/\.(jpg|png|jpeg|gif)$/)){
-  modal.innerHTML=`<img src="${url}">`
- }else if(url.match(/\.(mp4|webm)$/)){
-  modal.innerHTML=`<video src="${url}" controls autoplay></video>`
- }else return window.open(url)
- modal.style.display="flex"
-}
-
-/* FILE UI */
 function ui(f){
  let ts=Number(f.name.split("_")[0])
+ let thumb=""
+
+ if(f.download_url && f.name.match(/\.(jpg|png|jpeg|gif)$/)){
+  thumb=`<img class="thumb" src="${f.download_url}">`
+ } else {
+  thumb=`<div class="thumb"></div>`
+ }
+
  return `
  <div class="file">
-  <div class="thumb"></div>
+  ${thumb}
   <div style="flex:1">
    ${f.name}<br><small>${time(ts)}</small>
   </div>
   <div>
-   <button onclick="view('${f.download_url}')">👁</button>
    <button onclick="copy('${f.download_url}')">📋</button>
    <button onclick="del('${f.path}','${f.sha}')">🗑</button>
   </div>
  </div>`
 }
 
-/* LOAD */
 async function load(){
  let res=await fetch(`https://api.github.com/repos/${r()}/contents/${p()}`)
  let data=await res.json()
 
+ let q=search.value.toLowerCase()
+
  data.sort((a,b)=>Number(b.name.split("_")[0])-Number(a.name.split("_")[0]))
 
  home.innerHTML=""
- data.forEach(f=>home.innerHTML+=ui(f))
+ data.forEach(f=>{
+  if(!f.name.toLowerCase().includes(q)) return
+  home.innerHTML+=ui(f)
+ })
 }
 
-/* QUEUE SYSTEM */
-let queue=[]
+async function loadUploads(){
+ let res=await fetch(`https://api.github.com/repos/${r()}/contents/${p()}`)
+ let data=await res.json()
+
+ let now=Date.now()
+ recentUploads.innerHTML=""
+
+ data.forEach(f=>{
+  let ts=Number(f.name.split("_")[0])
+  if(isNaN(ts)) return
+  if((now-ts)/1000 <= 86400){
+    recentUploads.innerHTML+=ui(f)
+  }
+ })
+}
+
 let uploading=false
+let filesQueue=[]
 
 function startUpload(){
- let files=file.files
- for(let f of files){
-  queue.push(f)
- }
+ filesQueue=[...file.files]
  processQueue()
 }
 
@@ -135,27 +175,44 @@ async function processQueue(){
  if(uploading)return
  uploading=true
 
- let total=queue.length
+ let total=filesQueue.length
  let done=0
 
- while(queue.length){
-  let f=queue.shift()
-  await uploadOne(f)
+ queue.innerHTML=""
+
+ while(filesQueue.length){
+  let f=filesQueue.shift()
+  await uploadOne(f, done)
   done++
   totalBar.value=(done/total)*100
  }
 
  uploading=false
  load()
+ loadUploads()
 }
 
-/* UPLOAD */
-function uploadOne(file){
+function uploadOne(file,index){
  return new Promise(res=>{
   let name=Date.now()+"_"+file.name
 
-  // instant UI
-  home.innerHTML=ui({name:name,download_url:"#",path:"#",sha:"#"})+home.innerHTML
+  home.innerHTML=ui({
+   name:name,
+   download_url:"",
+   path:"",
+   sha:""
+  })+home.innerHTML
+
+  let box=document.createElement("div")
+  box.className="file"
+  box.innerHTML=`
+    <div style="flex:1">${file.name}</div>
+    <div class="progress-box">
+      <progress value="0" max="100" id="prog${index}"></progress>
+      <div class="percent" id="txt${index}">0%</div>
+    </div>
+  `
+  queue.appendChild(box)
 
   let reader=new FileReader()
   reader.onload=()=>{
@@ -166,13 +223,11 @@ function uploadOne(file){
    xhr.setRequestHeader("Authorization","token "+t())
    xhr.setRequestHeader("Content-Type","application/json")
 
-   let bar=document.createElement("progress")
-   bar.max=100
-   queueDiv.appendChild(bar)
-
    xhr.upload.onprogress=e=>{
     if(e.lengthComputable){
-     bar.value=(e.loaded/e.total)*100
+     let percent=Math.round((e.loaded/e.total)*100)
+     document.getElementById("prog"+index).value=percent
+     document.getElementById("txt"+index).innerText=percent+"%"
     }
    }
 
@@ -195,11 +250,13 @@ function uploadOne(file){
  })
 }
 
-let queueDiv=document.getElementById("queue")
+async function del(pathFile,sha){
+ if(!pathFile||!sha){
+  toast("Wait upload finish")
+  return
+ }
 
-/* DELETE */
-async function del(pth,sha){
- await fetch(`https://api.github.com/repos/${r()}/contents/${pth}`,{
+ await fetch(`https://api.github.com/repos/${r()}/contents/${pathFile}`,{
   method:"DELETE",
   headers:{
    Authorization:"token "+t(),
@@ -207,10 +264,12 @@ async function del(pth,sha){
   },
   body:JSON.stringify({message:"delete",sha:sha})
  })
+
+ toast("Deleted")
  load()
+ loadUploads()
 }
 
-/* COPY */
 function copy(t){
  navigator.clipboard.writeText(t)
  toast("Copied")

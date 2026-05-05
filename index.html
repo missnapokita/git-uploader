@@ -2,285 +2,221 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GitHub Drive PRO+</title>
+<title>Drive Ultra</title>
 
 <style>
-body { background:#0d1117; color:#c9d1d9; font-family:sans-serif; margin:0; }
-.container { max-width:900px; margin:auto; padding:10px; }
-
-.header {
-  display:flex; justify-content:space-between; align-items:center;
-  padding:10px; font-weight:bold;
-}
-
-.card { background:#161b22; border:1px solid #30363d; padding:10px; border-radius:10px; }
-
-input {
-  width:100%; padding:10px; margin:5px 0;
-  background:#0d1117; border:1px solid #30363d; color:white;
-  border-radius:6px;
-}
-
-button {
-  background:#238636; color:white; border:none;
-  padding:10px; border-radius:6px; width:100%;
-}
-
-.file {
-  display:flex;
-  gap:10px;
-  padding:10px;
-  border-bottom:1px solid #30363d;
-  align-items:center;
-}
-
-.thumb {
-  width:50px;
-  height:50px;
-  border-radius:8px;
-  object-fit:cover;
-  background:#222;
-}
-
-.file-info { flex:1; }
-
-.file-actions button {
-  width:auto;
-  padding:6px 8px;
-  font-size:12px;
-}
-
-.nav {
-  position:fixed;
-  bottom:0;
-  left:0;
-  right:0;
-  background:#161b22;
-  border-top:1px solid #30363d;
-  display:flex;
-}
-
-.nav button {
-  flex:1;
-  background:none;
-}
-
-.toast {
-  position:fixed;
-  bottom:70px;
-  left:50%;
-  transform:translateX(-50%);
-  background:#161b22;
-  padding:10px;
-  border-radius:6px;
-  opacity:0;
-  transition:.3s;
-}
-.toast.show { opacity:1; }
-
-.modal {
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,0.9);
-  display:none;
-  align-items:center;
-  justify-content:center;
-}
-.modal img, .modal video {
-  max-width:90%;
-  max-height:90%;
-}
+body{background:#0d1117;color:#fff;font-family:sans-serif;margin:0}
+.container{padding:10px}
+.file{display:flex;gap:10px;padding:10px;border-bottom:1px solid #30363d}
+.thumb{width:50px;height:50px;background:#222;border-radius:8px}
+button{background:#238636;border:none;color:#fff;padding:8px;border-radius:6px}
+input{width:100%;padding:10px;margin:5px 0;background:#0d1117;color:#fff;border:1px solid #30363d}
+.nav{position:fixed;bottom:0;width:100%;display:flex;background:#161b22}
+.nav button{flex:1;background:none}
+progress{width:100%;height:6px}
+.toast{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#161b22;padding:10px;border-radius:6px;opacity:0;transition:.3s}
+.toast.show{opacity:1}
+.modal{position:fixed;inset:0;background:#000;display:none;justify-content:center;align-items:center}
+.modal img,.modal video{max-width:90%}
 </style>
 </head>
 
 <body>
 
 <div class="container">
-
-<div class="header">📦 GitHub Drive</div>
+<h3>Drive Ultra</h3>
 
 <input id="token" placeholder="GitHub Token">
 <input id="repo" placeholder="username/repo">
 <input id="path" placeholder="uploads">
 
-<div id="homePage"></div>
+<div id="home"></div>
 
-<div id="uploadPage" style="display:none;">
-  <input type="file" id="file" multiple>
-  <button onclick="uploadAll()">Upload</button>
+<div id="upload" style="display:none">
+<input type="file" id="file" multiple>
+<button onclick="startUpload()">Upload</button>
+
+<progress id="totalBar" value="0" max="100"></progress>
+<div id="queue"></div>
 </div>
 
 </div>
 
 <div class="nav">
-  <button onclick="showPage('home')">🏠</button>
-  <button onclick="showPage('upload')">⬆️</button>
+<button onclick="page('home')">🏠</button>
+<button onclick="page('upload')">⬆️</button>
 </div>
 
 <div id="toast" class="toast"></div>
-
 <div id="modal" class="modal" onclick="this.style.display='none'"></div>
 
 <script>
-function token(){ return tokenEl.value }
-function repo(){ return repoEl.value }
-function path(){ return pathEl.value||"uploads" }
+function t(){return token.value}
+function r(){return repo.value}
+function p(){return path.value||"uploads"}
 
-let tokenEl=document.getElementById("token");
-let repoEl=document.getElementById("repo");
-let pathEl=document.getElementById("path");
-
-function showPage(p){
-  homePage.style.display=p==="home"?"block":"none";
-  uploadPage.style.display=p==="upload"?"block":"none";
-  if(p==="home") loadFiles();
+function toast(msg){
+ let el=toastEl
+ el.innerText=msg
+ el.classList.add("show")
+ setTimeout(()=>el.classList.remove("show"),2000)
 }
 
-function toast(t){
-  let el=document.getElementById("toast");
-  el.innerText=t;
-  el.classList.add("show");
-  setTimeout(()=>el.classList.remove("show"),2000);
+let toastEl=document.getElementById("toast")
+
+function page(x){
+ home.style.display=x==="home"?"block":"none"
+ upload.style.display=x==="upload"?"block":"none"
+ if(x==="home")load()
 }
 
 /* TIME */
-function timeAgo(ts){
-  let d=(Date.now()-ts)/1000;
-  if(d<5)return"just now";
-  if(d<60)return Math.floor(d)+" sec";
-  if(d<3600)return Math.floor(d/60)+" min";
-  if(d<86400)return Math.floor(d/3600)+" hr";
-  if(d<604800)return Math.floor(d/86400)+" day";
-  return Math.floor(d/604800)+" week";
+function time(ts){
+ let d=(Date.now()-ts)/1000
+ if(d<5)return"just now"
+ if(d<60)return~~d+"s"
+ if(d<3600)return~~(d/60)+"m"
+ if(d<86400)return~~(d/3600)+"h"
+ if(d<604800)return~~(d/86400)+"d"
+ return~~(d/604800)+"w"
 }
 
 /* PREVIEW */
-function openPreview(url){
-  let m=document.getElementById("modal");
-  if(url.match(/\.(jpg|png|jpeg|gif)$/)){
-    m.innerHTML=`<img src="${url}">`;
-  } else if(url.match(/\.(mp4|webm)$/)){
-    m.innerHTML=`<video src="${url}" controls autoplay></video>`;
-  } else {
-    window.open(url);
-    return;
-  }
-  m.style.display="flex";
+function view(url){
+ if(url.match(/\.(jpg|png|jpeg|gif)$/)){
+  modal.innerHTML=`<img src="${url}">`
+ }else if(url.match(/\.(mp4|webm)$/)){
+  modal.innerHTML=`<video src="${url}" controls autoplay></video>`
+ }else return window.open(url)
+ modal.style.display="flex"
 }
 
 /* FILE UI */
-function fileHTML(f){
-  let ts=Number(f.name.split("_")[0]);
-  let t=!isNaN(ts)?timeAgo(ts):"old";
-
-  let thumb="";
-  if(f.name.match(/\.(jpg|png|jpeg|gif)$/)){
-    thumb=`<img class="thumb" src="${f.download_url}">`;
-  } else {
-    thumb=`<div class="thumb"></div>`;
-  }
-
-  return `
-  <div class="file">
-    ${thumb}
-    <div class="file-info">
-      ${f.name}<br><small>${t}</small>
-    </div>
-    <div class="file-actions">
-      <button onclick="openPreview('${f.download_url}')">View</button>
-      <button onclick="copy('${f.download_url}')">Copy</button>
-      <button onclick="del('${f.path}','${f.sha}')">Del</button>
-    </div>
-  </div>`;
+function ui(f){
+ let ts=Number(f.name.split("_")[0])
+ return `
+ <div class="file">
+  <div class="thumb"></div>
+  <div style="flex:1">
+   ${f.name}<br><small>${time(ts)}</small>
+  </div>
+  <div>
+   <button onclick="view('${f.download_url}')">👁</button>
+   <button onclick="copy('${f.download_url}')">📋</button>
+   <button onclick="del('${f.path}','${f.sha}')">🗑</button>
+  </div>
+ </div>`
 }
 
 /* LOAD */
-async function loadFiles(){
-  let r=await fetch(`https://api.github.com/repos/${repo()}/contents/${path()}`);
-  let d=await r.json();
+async function load(){
+ let res=await fetch(`https://api.github.com/repos/${r()}/contents/${p()}`)
+ let data=await res.json()
 
-  d.sort((a,b)=>Number(b.name.split("_")[0])-Number(a.name.split("_")[0]));
+ data.sort((a,b)=>Number(b.name.split("_")[0])-Number(a.name.split("_")[0]))
 
-  homePage.innerHTML="";
-  d.forEach(f=>homePage.innerHTML+=fileHTML(f));
+ home.innerHTML=""
+ data.forEach(f=>home.innerHTML+=ui(f))
 }
 
-/* INSTANT ADD */
-function instant(name){
-  homePage.innerHTML = fileHTML({
-    name:name,
-    download_url:"#",
-    path:"#",
-    sha:"#"
-  }) + homePage.innerHTML;
+/* QUEUE SYSTEM */
+let queue=[]
+let uploading=false
+
+function startUpload(){
+ let files=file.files
+ for(let f of files){
+  queue.push(f)
+ }
+ processQueue()
+}
+
+async function processQueue(){
+ if(uploading)return
+ uploading=true
+
+ let total=queue.length
+ let done=0
+
+ while(queue.length){
+  let f=queue.shift()
+  await uploadOne(f)
+  done++
+  totalBar.value=(done/total)*100
+ }
+
+ uploading=false
+ load()
 }
 
 /* UPLOAD */
-async function uploadAll(){
-  let files=file.files;
+function uploadOne(file){
+ return new Promise(res=>{
+  let name=Date.now()+"_"+file.name
 
-  for(let i=0;i<files.length;i++){
-    let name=Date.now()+"_"+files[i].name;
+  // instant UI
+  home.innerHTML=ui({name:name,download_url:"#",path:"#",sha:"#"})+home.innerHTML
 
-    instant(name);
+  let reader=new FileReader()
+  reader.onload=()=>{
+   let base64=reader.result.split(',')[1]
 
-    await upload(files[i],name);
+   let xhr=new XMLHttpRequest()
+   xhr.open("PUT",`https://api.github.com/repos/${r()}/contents/${p()}/${name}`)
+   xhr.setRequestHeader("Authorization","token "+t())
+   xhr.setRequestHeader("Content-Type","application/json")
+
+   let bar=document.createElement("progress")
+   bar.max=100
+   queueDiv.appendChild(bar)
+
+   xhr.upload.onprogress=e=>{
+    if(e.lengthComputable){
+     bar.value=(e.loaded/e.total)*100
+    }
+   }
+
+   xhr.onload=()=>{
+    toast(xhr.status===201?"Upload success":"Upload failed")
+    res()
+   }
+
+   xhr.onerror=()=>{
+    toast("Upload failed")
+    res()
+   }
+
+   xhr.send(JSON.stringify({
+    message:"upload",
+    content:base64
+   }))
   }
+  reader.readAsDataURL(file)
+ })
 }
 
-function upload(file,name){
-  return new Promise(res=>{
-    let r=new FileReader();
-    r.onload=()=>{
-      let base64=r.result.split(',')[1];
-
-      fetch(`https://api.github.com/repos/${repo()}/contents/${path()}/${name}`,{
-        method:"PUT",
-        headers:{
-          Authorization:"token "+token(),
-          "Content-Type":"application/json"
-        },
-        body:JSON.stringify({
-          message:"upload",
-          content:base64
-        })
-      }).then(r=>{
-        if(r.status===201){
-          toast("Upload success");
-          loadFiles();
-        }else{
-          toast("Upload failed");
-        }
-        res();
-      }).catch(()=>{
-        toast("Upload failed");
-        res();
-      });
-    };
-    r.readAsDataURL(file);
-  });
-}
+let queueDiv=document.getElementById("queue")
 
 /* DELETE */
-async function del(p,sha){
-  await fetch(`https://api.github.com/repos/${repo()}/contents/${p}`,{
-    method:"DELETE",
-    headers:{
-      Authorization:"token "+token(),
-      "Content-Type":"application/json"
-    },
-    body:JSON.stringify({message:"delete",sha:sha})
-  });
-  loadFiles();
+async function del(pth,sha){
+ await fetch(`https://api.github.com/repos/${r()}/contents/${pth}`,{
+  method:"DELETE",
+  headers:{
+   Authorization:"token "+t(),
+   "Content-Type":"application/json"
+  },
+  body:JSON.stringify({message:"delete",sha:sha})
+ })
+ load()
 }
 
 /* COPY */
 function copy(t){
-  navigator.clipboard.writeText(t);
-  toast("Copied");
+ navigator.clipboard.writeText(t)
+ toast("Copied")
 }
 
-showPage("home");
+page("home")
 </script>
 
 </body>
